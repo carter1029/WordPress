@@ -137,5 +137,7 @@ echo -e "\033[1;33m数据库名称：$db_name"
 echo "数据库用户：$db_user"
 echo "数据库密码：$db_password"
 echo "MySQL root密码：$mysqlrootpass\033[0m"
+
+# 其他信息
 echo "Nginx 配置文件路径：$nginx_conf"
 echo "WordPress 站点路径：$install_dir"

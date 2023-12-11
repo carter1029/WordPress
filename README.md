@@ -1,10 +1,6 @@
 ###  一键安装LNMP环境的WordPress脚本(国际版)
 
 
-#### 一键脚本：
-```
-wget -N --no-check-certificate https://github.com/taotao1058/WordPress/raw/main/wp && bash wp
-```
 ---
 #### 一键脚本（无证书）：
 

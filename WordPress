@@ -1,6 +1,12 @@
 #!/bin/bash
 
-# 检测Linux发行版
+# 检查是否以 root 用户运行
+if [ "$(id -u)" != "0" ]; then
+    echo "请以 root 用户运行此脚本"
+    exit 1
+fi
+
+# 检测 Linux 发行版
 if [ -f /etc/lsb-release ]; then
     DISTRO="ubuntu"
 elif [ -f /etc/redhat-release ]; then
@@ -8,7 +14,7 @@ elif [ -f /etc/redhat-release ]; then
 elif [ -f /etc/debian_version ]; then
     DISTRO="debian"
 else
-    echo "不支持的发行版"
+    echo "不支持的 Linux 发行版"
     exit 1
 fi
 
@@ -18,13 +24,8 @@ db_user="$db_name"
 db_password=$(date +%s | sha256sum | head -c 10)
 mysqlrootpass=$(date +%s | sha256sum | head -c 10)
 
-# 检查 Nginx, MySQL 和 PHP 是否已安装
-nginx_installed=$(nginx -v 2>&1 | grep nginx)
-mysql_installed=$(mysql --version 2>&1 | grep mysql)
-php_installed=$(php -v 2>&1 | grep PHP)
-
-# 安装 Nginx, MySQL 和 PHP 如果它们没有安装
-if [ -z "$nginx_installed" ]; then
+# 安装 Nginx
+install_nginx() {
     echo "正在安装 Nginx..."
     if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
         apt-get update -y
@@ -32,112 +33,63 @@ if [ -z "$nginx_installed" ]; then
     elif [ "$DISTRO" = "centos" ]; then
         yum -y install nginx
     fi
-fi
+    systemctl enable nginx
+    systemctl start nginx
+}
 
-if [ -z "$mysql_installed" ]; then
+# 安装 MySQL
+install_mysql() {
     echo "正在安装 MySQL..."
     if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
-        apt-get install -y mysql-server
+        apt-get install -y mysql-server mysql-client
     elif [ "$DISTRO" = "centos" ]; then
-        yum -y install mariadb-server
+        yum -y install mariadb-server mariadb
     fi
-fi
+    systemctl enable mysql
+    systemctl start mysql
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mysqlrootpass'; FLUSH PRIVILEGES;"
+    cat > /root/.my.cnf <<EOF
+[client]
+user=root
+password=$mysqlrootpass
+EOF
+    chmod 640 /root/.my.cnf
+}
 
-if [ -z "$php_installed" ]; then
+# 安装 PHP
+install_php() {
     echo "正在安装 PHP..."
     if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
         apt-get install -y php-fpm php-mysql
     elif [ "$DISTRO" = "centos" ]; then
         yum -y install php-fpm php-mysql
     fi
-fi
-
-# 启动 Nginx 和 MySQL
-systemctl enable nginx
-systemctl start nginx
-systemctl enable mysql
-systemctl start mysql
-
-# 设置MySQL root密码
-mysql -e "USE mysql;"
-mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '$mysqlrootpass';"
-mysql -e "FLUSH PRIVILEGES;"
-cat > /root/.my.cnf <<EOF
-[client]
-user=root
-password=$mysqlrootpass
-EOF
-chmod 640 /root/.my.cnf
-
-# 安装PHP并配置Nginx支持PHP
-apt-get install -y php || yum install -y php
-sed -i 's/;cgi.fix_pathinfo=1/cgi.fix_pathinfo=0/' /etc/php/*/fpm/php.ini || sed -i 's/;cgi.fix_pathinfo=1/cgi.fix_pathinfo=0/' /etc/php.ini
-
-# 创建 Nginx 配置文件
-nginx_conf="/etc/nginx/sites-available/wordpress"
-ln -s /etc/nginx/sites-available/wordpress /etc/nginx/sites-enabled/
-cat > $nginx_conf <<EOF
-server {
-    listen 80;
-    server_name _;
-
-    root $install_dir;
-    index index.php index.html index.htm;
-
-    location / {
-        try_files \$uri \$uri/ /index.php?\$args;
-    }
-
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php7.4-fpm.sock;
-    }
+    systemctl enable php-fpm
+    systemctl start php-fpm
 }
-EOF
 
-# 检查 Nginx 配置并重启服务
-nginx -t && systemctl restart nginx
-
-# 下载并解压最新的WordPress包
-if [ ! -f /tmp/latest.tar.gz ]; then
-    echo "正在下载WordPress"
+# 安装和配置 WordPress
+install_wordpress() {
+    echo "正在安装 WordPress..."
     wget -O /tmp/latest.tar.gz http://wordpress.org/latest.tar.gz
-fi
+    tar -C $install_dir -zxf /tmp/latest.tar.gz --strip-components=1
+    cp $install_dir/wp-config-sample.php $install_dir/wp-config.php
+    sed -i "s/database_name_here/$db_name/g" $install_dir/wp-config.php
+    sed -i "s/username_here/$db_user/g" $install_dir/wp-config.php
+    sed -i "s/password_here/$db_password/g" $install_dir/wp-config.php
+    wget -O - https://api.wordpress.org/secret-key/1.1/salt/ >> $install_dir/wp-config.php
+    mysql -u root -e "CREATE DATABASE $db_name; CREATE USER '$db_user'@'localhost' IDENTIFIED BY '$db_password'; GRANT ALL PRIVILEGES ON $db_name.* TO '$db_user'@'localhost'; FLUSH PRIVILEGES;"
+}
 
-tar -C $install_dir -zxf /tmp/latest.tar.gz --strip-components=1
-chown nginx:nginx $install_dir -R
+# 主安装流程
+install_nginx
+install_mysql
+install_php
+install_wordpress
 
-# 检查wp-config-sample.php是否存在
-if [ ! -f "$install_dir/wp-config-sample.php" ]; then
-    echo "wp-config-sample.php 不存在"
-    exit 1
-fi
-
-# 创建wp-config.php文件并设置数据库凭证
-cp $install_dir/wp-config-sample.php $install_dir/wp-config.php
-
-sed -i "s/database_name_here/$db_name/g" $install_dir/wp-config.php
-sed -i "s/username_here/$db_user/g" $install_dir/wp-config.php
-sed -i "s/password_here/$db_password/g" $install_dir/wp-config.php
-
-cat << EOF >> $install_dir/wp-config.php
-define('FS_METHOD', 'direct');
-EOF
-
-# 生成WordPress安全密钥（Salts）
-wget -O - https://api.wordpress.org/secret-key/1.1/salt/ >> $install_dir/wp-config.php
-
-mysql -u root -e "CREATE DATABASE $db_name;"
-mysql -u root -e "CREATE USER '$db_name'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '$db_password';"
-mysql -u root -e "GRANT ALL PRIVILEGES ON $db_name.* TO '$db_user'@'localhost';"
-mysql -u root -e "FLUSH PRIVILEGES;"
-
-# 显示信息
-echo -e "数据库名称：$db_name"
+# 输出安装信息
+echo "WordPress 安装完成。"
+echo "数据库名称：$db_name"
 echo "数据库用户：$db_user"
 echo "数据库密码：$db_password"
-echo "MySQL root密码：$mysqlrootpass"
-
-# 其他信息
-echo "Nginx 配置文件路径：$nginx_conf"
-echo "WordPress 站点路径：$install_dir"
+echo "MySQL root 密码：$mysqlrootpass"

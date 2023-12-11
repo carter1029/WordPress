@@ -81,12 +81,23 @@ install_wordpress() {
     mysql -u root -e "CREATE DATABASE $db_name; CREATE USER '$db_user'@'localhost' IDENTIFIED BY '$db_password'; GRANT ALL PRIVILEGES ON $db_name.* TO '$db_user'@'localhost'; FLUSH PRIVILEGES;"
 }
 
+# 安装 DNS Utils
+install_dns_utils() {
+    echo "正在安装 DNS 工具..."
+    if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
+        apt-get install -y dnsutils
+    elif [ "$DISTRO" = "centos" ]; then
+        yum -y install bind-utils
+    fi
+}
+
 # 用户输入域名和电子邮件
 prompt_user_input() {
     read -p "请输入您的域名: " domain
     read -p "请输入您的电子邮件地址: " email
 
     # 检查域名是否已解析到本机 IP
+    install_dns_utils
     domain_ip=$(dig +short $domain)
     local_ip=$(curl -s http://ipecho.net/plain)
 

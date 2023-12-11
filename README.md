@@ -2,10 +2,17 @@
 
 
 ---
-#### 一键脚本 ：
+#### 一键安装脚本中文版 ：
 
 ```
 wget -N --no-check-certificate https://github.com/taotao1058/WordPress/raw/main/WordPress && bash WordPress
+```
+
+---
+#### 一键安装脚本国际版 ：
+
+```
+wget -N --no-check-certificate https://github.com/taotao1058/WordPress/raw/main/wp && bash wp
 ```
 
 

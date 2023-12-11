@@ -1,5 +1,4 @@
-###  一键安装带有 LNMP 堆栈的 WordPress 的 bash 脚本(国际版)
-
+###  一键安装LNMP环境的WordPress脚本(国际版)
 #### 一键脚本：
 
 ```

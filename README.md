@@ -1,4 +1,4 @@
-###  一键安装LNMP环境的WordPress脚本(国际版)
+###  一键安装LNMP环境的WordPress脚本
 
 
 ---

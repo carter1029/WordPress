@@ -27,7 +27,7 @@ wget -N --no-check-certificate https://github.com/taotao1058/WordPress/raw/main/
 
 ---
 
-####  申请证书使用acme脚本，nginx配置文件模板如下
+####  申请证书可使用acme脚本，nginx配置文件模板如下
 ```
 server {
     listen 80;

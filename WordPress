@@ -70,9 +70,9 @@ install_php() {
 
 # 安装和配置 WordPress
 install_wordpress() {
-    echo "正在安装 WordPress..."
-    wget -O /tmp/latest.tar.gz http://wordpress.org/latest.tar.gz
-    tar -C $install_dir -zxf /tmp/latest.tar.gz --strip-components=1
+    echo "正在安装 WordPress 中文版..."
+    wget -O /tmp/latest-zh_CN.tar.gz https://cn.wordpress.org/latest-zh_CN.tar.gz
+    tar -C $install_dir -zxf /tmp/latest-zh_CN.tar.gz --strip-components=1
     cp $install_dir/wp-config-sample.php $install_dir/wp-config.php
     sed -i "s/database_name_here/$db_name/g" $install_dir/wp-config.php
     sed -i "s/username_here/$db_user/g" $install_dir/wp-config.php

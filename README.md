@@ -9,7 +9,7 @@ wget -N --no-check-certificate https://github.com/taotao1058/WordPress/raw/main/
 ```
 
 ---
-#### 一键安装脚本国际版 ：
+#### 一键安装脚本英文国际版 ：
 
 ```
 wget -N --no-check-certificate https://github.com/taotao1058/WordPress/raw/main/wp && bash wp

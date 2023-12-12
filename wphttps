@@ -52,6 +52,11 @@ if [ ! -d "$ssl_dir" ]; then
     mkdir -p "$ssl_dir"
 fi
 
+# 配置文件路径
+nginx_config_file="/etc/nginx/sites-available/wordpress"
+nginx_link_file="/etc/nginx/sites-enabled/wordpress"
+mysql_config_file="/root/.my.cnf"
+
 # 安装 Nginx
 install_nginx() {
     echo "正在安装 Nginx..."
@@ -63,6 +68,9 @@ install_nginx() {
     fi
     systemctl enable nginx
     systemctl start nginx
+
+    # 配置 Nginx 使用 SSL 证书
+    configure_nginx_ssl
 }
 
 # 安装 MySQL
@@ -76,12 +84,14 @@ install_mysql() {
     systemctl enable mysql
     systemctl start mysql
     mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mysqlrootpass'; FLUSH PRIVILEGES;"
-    cat > /root/.my.cnf <<EOF
+    
+    # 创建或更新 MySQL 配置文件
+    cat > "$mysql_config_file" <<EOF
 [client]
 user=root
 password=$mysqlrootpass
 EOF
-    chmod 640 /root/.my.cnf
+    chmod 640 "$mysql_config_file"
 }
 
 # 安装 PHP
@@ -133,14 +143,11 @@ generate_ssl_certificate() {
 # 配置 Nginx 使用 SSL 证书
 configure_nginx_ssl() {
     echo "配置 Nginx 使用 SSL 证书..."
-    config_file="/etc/nginx/sites-available/wordpress"
-    link_file="/etc/nginx/sites-enabled/wordpress"
-
-    if [ -f "$link_file" ]; then
-        rm "$link_file"
+    if [ -f "$nginx_config_file" ]; then
+        rm "$nginx_config_file"
     fi
 
-    cat > $config_file <<EOF
+    cat > "$nginx_config_file" <<EOF
 server {
     listen 80;
     server_name $domain_name;
@@ -172,7 +179,7 @@ server {
 }
 EOF
 
-    ln -s $config_file $link_file
+    ln -s "$nginx_config_file" "$nginx_link_file"
     nginx -t && systemctl reload nginx
 }
 
@@ -180,12 +187,12 @@ EOF
 install_wordpress() {
     echo "正在安装 WordPress 中文版..."
     wget -O /tmp/latest-zh_CN.tar.gz https://cn.wordpress.org/latest-zh_CN.tar.gz
-    tar -C $install_dir -zxf /tmp/latest-zh_CN.tar.gz --strip-components=1
-    cp $install_dir/wp-config-sample.php $install_dir/wp-config.php
-    sed -i "s/database_name_here/$db_name/g" $install_dir/wp-config.php
-    sed -i "s/username_here/$db_user/g" $install_dir/wp-config.php
-    sed -i "s/password_here/$db_password/g" $install_dir/wp-config.php
-    wget -O - https://api.wordpress.org/secret-key/1.1/salt/ >> $install_dir/wp-config.php
+    tar -C "$install_dir" -zxf /tmp/latest-zh_CN.tar.gz --strip-components=1
+    cp "$install_dir/wp-config-sample.php" "$install_dir/wp-config.php"
+    sed -i "s/database_name_here/$db_name/g" "$install_dir/wp-config.php"
+    sed -i "s/username_here/$db_user/g" "$install_dir/wp-config.php"
+    sed -i "s/password_here/$db_password/g" "$install_dir/wp-config.php"
+    wget -O - https://api.wordpress.org/secret-key/1.1/salt/ >> "$install_dir/wp-config.php"
     mysql -u root -e "CREATE DATABASE $db_name; CREATE USER '$db_user'@'localhost' IDENTIFIED BY '$db_password'; GRANT ALL PRIVILEGES ON $db_name.* TO '$db_user'@'localhost'; FLUSH PRIVILEGES;"
 }
 
@@ -198,7 +205,6 @@ install_acme_sh
 install_socat
 register_letsencrypt
 generate_ssl_certificate
-configure_nginx_ssl
 
 # 输出安装信息
 echo "WordPress 安装完成。"
@@ -206,4 +212,3 @@ echo "数据库名称：$db_name"
 echo "数据库用户：$db_user"
 echo "数据库密码：$db_password"
 echo "MySQL root 密码：$mysqlrootpass"
-echo "Nginx 配置文件路径 /etc/nginx/sites-available/wordpress"

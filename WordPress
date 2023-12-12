@@ -65,59 +65,6 @@ install_nginx() {
     fi
 }
 
-# 配置 Nginx
-configure_nginx() {
-    echo "正在配置 Nginx..."
-    cat > /etc/nginx/sites-available/wordpress <<EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $domain_name;
-    return 301 https://\$host\$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name $domain_name;
-
-    ssl_certificate $install_dir/$domain_name.cer;
-    ssl_certificate_key $install_dir/$domain_name.key;
-
-    root $install_dir;
-    index index.php index.html index.htm;
-
-    location / {
-        try_files \$uri \$uri/ /index.php?\$args;
-    }
-
-    location ~ \.php\$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/$PHP_SERVICE.sock;
-    }
-
-    location ~ /\.ht {
-        deny all;
-    }
-}
-EOF
-
-    ln -s /etc/nginx/sites-available/wordpress /etc/nginx/sites-enabled/
-    echo "检查 Nginx 配置文件..."
-    nginx -t
-    if [ $? -ne 0 ]; then
-        echo "Nginx 配置文件错误，请检查 /etc/nginx/nginx.conf"
-        exit 1
-    fi
-
-    echo "重新启动 Nginx 服务..."
-    systemctl restart nginx
-    if [ $? -ne 0 ]; then
-        echo "Nginx 服务启动失败，请检查"
-        exit 1
-    fi
-}
-
 # 安装 MySQL
 install_mysql() {
     echo "正在安装 MySQL..."
@@ -171,10 +118,62 @@ generate_ssl_certificate() {
         exit 1
     fi
     ~/.acme.sh/acme.sh --install-cert -d $domain_name \
-        --key-file       $install_dir/$domain_name.key  \
-        --fullchain-file $install_dir/$domain_name.cer \
+        --key-file       /etc/ssl/$domain_name.key  \
+        --fullchain-file /etc/ssl/$domain_name.cer \
         --reloadcmd     "systemctl restart nginx"
-    systemctl start nginx
+}
+
+# 配置 Nginx
+configure_nginx() {
+    echo "正在配置 Nginx..."
+    cat > /etc/nginx/sites-available/wordpress <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $domain_name;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name $domain_name;
+
+    ssl_certificate /etc/ssl/$domain_name.cer;
+    ssl_certificate_key /etc/ssl/$domain_name.key;
+
+    root $install_dir;
+    index index.php index.html index.htm;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+
+    location ~ \.php\$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/$PHP_SERVICE.sock;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOF
+
+    ln -s /etc/nginx/sites-available/wordpress /etc/nginx/sites-enabled/
+    echo "检查 Nginx 配置文件..."
+    nginx -t
+    if [ $? -ne 0 ]; then
+        echo "Nginx 配置文件错误，请检查 /etc/nginx/nginx.conf"
+        exit 1
+    fi
+
+    echo "重新启动 Nginx 服务..."
+    systemctl restart nginx
+    if [ $? -ne 0 ]; then
+        echo "Nginx 服务启动失败，请检查"
+        exit 1
+    fi
 }
 
 # 安装和配置 WordPress
@@ -192,14 +191,14 @@ install_wordpress() {
 
 # 主安装流程
 install_nginx
-configure_nginx
 install_mysql
 install_php
-install_wordpress
 install_acme_sh
 install_socat
 register_letsencrypt
 generate_ssl_certificate
+configure_nginx
+install_wordpress
 
 # 输出安装信息
 echo "WordPress 安装完成。"

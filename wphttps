@@ -40,17 +40,20 @@ if ! [[ $user_email =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; the
     exit 1
 fi
 
-# 检查安装目录是否存在
-if [ ! -d "$install_dir" ]; then
-    echo "安装目录不存在：$install_dir"
-    exit 1
-fi
+# 创建或检查目录存在
+create_or_check_directory() {
+    local directory="$1"
+    if [ ! -d "$directory" ]; then
+        echo "目录不存在，正在创建：$directory"
+        mkdir -p "$directory"
+    else
+        echo "目录已存在：$directory"
+    fi
+}
 
-# 检查并创建 SSL 目录
-ssl_dir="/etc/nginx/ssl"
-if [ ! -d "$ssl_dir" ]; then
-    mkdir -p "$ssl_dir"
-fi
+# 创建或检查配置文件目录
+create_or_check_directory "/etc/nginx/sites-available"
+create_or_check_directory "/etc/nginx/sites-enabled"
 
 # 配置文件路径
 nginx_config_file="/etc/nginx/sites-available/wordpress"

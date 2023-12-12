@@ -8,16 +8,25 @@ fi
 
 # 检测 Linux 发行版
 DISTRO=""
-if [ -f /etc/lsb-release ]; then
-    DISTRO="ubuntu"
-elif [ -f /etc/redhat-release ]; then
-    DISTRO="centos"
-elif [ -f /etc/debian_version ]; then
-    DISTRO="debian"
-else
-    echo "不支持的 Linux 发行版"
-    exit 1
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    DISTRO=$ID
 fi
+
+case $DISTRO in
+    ubuntu|debian)
+        PKG_MANAGER="apt-get"
+        PHP_SERVICE="php7.4-fpm"
+        ;;
+    centos|rhel|fedora)
+        PKG_MANAGER="yum"
+        PHP_SERVICE="php-fpm"
+        ;;
+    *)
+        echo "不支持的 Linux 发行版: $DISTRO"
+        exit 1
+        ;;
+esac
 
 install_dir="/var/www/html"
 db_name="wp$(date +%s)"
@@ -70,12 +79,8 @@ mysql_config_file="/root/.my.cnf"
 # 安装 Nginx
 install_nginx() {
     echo "正在安装 Nginx..."
-    if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
-        apt-get update -y
-        apt-get install -y nginx
-    elif [ "$DISTRO" = "centos" ]; then
-        yum -y install nginx
-    fi
+    $PKG_MANAGER update -y
+    $PKG_MANAGER install -y nginx
     systemctl enable nginx
     systemctl start nginx
     configure_nginx_ssl
@@ -85,12 +90,14 @@ install_nginx() {
 install_mysql() {
     echo "正在安装 MySQL..."
     if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
-        apt-get install -y mysql-server mysql-client
-    elif [ "$DISTRO" = "centos" ]; then
-        yum -y install mariadb-server mariadb
+        $PKG_MANAGER install -y mysql-server mysql-client
+        systemctl enable mysql
+        systemctl start mysql
+    elif [ "$DISTRO" = "centos" ] || [ "$DISTRO" = "rhel" ] || [ "$DISTRO" = "fedora" ]; then
+        $PKG_MANAGER install -y mariadb-server mariadb
+        systemctl enable mariadb
+        systemctl start mariadb
     fi
-    systemctl enable mysql
-    systemctl start mysql
     mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mysqlrootpass'; FLUSH PRIVILEGES;"
 
     cat > "$mysql_config_file" <<EOF
@@ -105,12 +112,12 @@ EOF
 install_php() {
     echo "正在安装 PHP..."
     if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
-        apt-get install -y php-fpm php-mysql
-    elif [ "$DISTRO" = "centos" ]; then
-        yum -y install php-fpm php-mysql
+        $PKG_MANAGER install -y php-fpm php-mysql
+    elif [ "$DISTRO" = "centos" ] || [ "$DISTRO" = "rhel" ] || [ "$DISTRO" = "fedora" ]; then
+        $PKG_MANAGER install -y php php-fpm php-mysql
     fi
-    systemctl enable php-fpm
-    systemctl start php-fpm
+    systemctl enable $PHP_SERVICE
+    systemctl start $PHP_SERVICE
 }
 
 # 安装 acme.sh
@@ -123,11 +130,7 @@ install_acme_sh() {
 # 安装 socat
 install_socat() {
     echo "正在安装 socat..."
-    if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
-        apt-get install -y socat
-    elif [ "$DISTRO" = "centos" ]; then
-        yum -y install socat
-    fi
+    $PKG_MANAGER install -y socat
 }
 
 # 注册 Let's Encrypt 账号
@@ -141,8 +144,8 @@ generate_ssl_certificate() {
     echo "正在为 $domain_name 生成 SSL 证书..."
     ~/.acme.sh/acme.sh --issue --standalone -d $domain_name --server letsencrypt
     ~/.acme.sh/acme.sh --install-cert -d $domain_name \
-        --key-file       $ssl_dir/$domain_name.key  \
-        --fullchain-file $ssl_dir/$domain_name.cer \
+        --key-file       $install_dir/$domain_name.key  \
+        --fullchain-file $install_dir/$domain_name.cer \
         --reloadcmd     "service nginx reload"
 }
 
@@ -164,8 +167,8 @@ server {
     listen 443 ssl;
     server_name $domain_name;
 
-    ssl_certificate $ssl_dir/$domain_name.cer;
-    ssl_certificate_key $ssl_dir/$domain_name.key;
+    ssl_certificate $install_dir/$domain_name.cer;
+    ssl_certificate_key $install_dir/$domain_name.key;
 
     root $install_dir;
     index index.php index.html index.htm;
@@ -176,7 +179,7 @@ server {
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php7.4-fpm.sock; # 根据 PHP 版本修改
+        fastcgi_pass unix:/var/run/php/$PHP_SERVICE.sock; # 根据 PHP 版本修改
     }
 
     location ~ /\.ht {

@@ -9,6 +9,7 @@ wget -N --no-check-certificate https://github.com/taotao1058/WordPress/raw/main/
 ```
 
 ---
+##### 仅适用Ubuntu和Debian系统 
 ##### 基于 L N M P 环境
 ##### 随机生成数据库密码
 ##### 自动申请证书并开启https

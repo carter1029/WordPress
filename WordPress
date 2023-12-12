@@ -204,9 +204,10 @@ install_wordpress() {
     wget -O - https://api.wordpress.org/secret-key/1.1/salt/ >> "$install_dir/wp-config.php"
 
     # 创建数据库和用户
-    mysql --user=root --password=$mysqlrootpass <<-EOF
+    mysql --user=root --password=$mysqlrootpass <<EOF
 CREATE DATABASE $db_name CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-GRANT ALL ON $db_name.* TO '$db_user'@'localhost' IDENTIFIED BY '$db_password';
+CREATE USER '$db_user'@'localhost' IDENTIFIED WITH mysql_native_password BY '$db_password';
+GRANT ALL ON $db_name.* TO '$db_user'@'localhost';
 FLUSH PRIVILEGES;
 EOF
 }

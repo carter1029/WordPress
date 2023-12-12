@@ -87,7 +87,6 @@ install_nginx() {
     $PKG_MANAGER install -y nginx
     systemctl enable nginx
     systemctl start nginx
-    configure_nginx_ssl
 }
 
 # 安装 MySQL
@@ -146,11 +145,17 @@ register_letsencrypt() {
 # 生成 SSL 证书
 generate_ssl_certificate() {
     echo "正在为 $domain_name 生成 SSL 证书..."
+    systemctl stop nginx
     ~/.acme.sh/acme.sh --issue --standalone -d $domain_name --server letsencrypt
+    if [ $? -ne 0 ]; then
+        echo "SSL 证书生成失败"
+        exit 1
+    fi
     ~/.acme.sh/acme.sh --install-cert -d $domain_name \
         --key-file       $install_dir/$domain_name.key  \
         --fullchain-file $install_dir/$domain_name.cer \
-        --reloadcmd     "service nginx reload"
+        --reloadcmd     "systemctl restart nginx"
+    systemctl start nginx
 }
 
 # 配置 Nginx 使用 SSL 证书

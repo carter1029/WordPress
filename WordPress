@@ -90,7 +90,7 @@ EOF
 user=root
 password=$mysqlrootpass
 EOF
-    chmod 640 /root/.my.cnf
+    chmod 700 /root/.my.cnf
 }
 
 # 安装 PHP

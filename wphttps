@@ -25,11 +25,19 @@ db_user="$db_name"
 db_password=$(openssl rand -base64 12)
 mysqlrootpass=$(openssl rand -base64 12)
 
+# 检查并创建安装目录
+if [ ! -d "$install_dir" ]; then
+    echo "安装目录 $install_dir 不存在，正在创建..."
+    mkdir -p "$install_dir"
+else
+    echo "安装目录 $install_dir 已存在"
+fi
+
 # 询问用户输入域名和电子邮件地址
 read -p "请输入您的域名: " domain_name
 read -p "请输入您的电子邮件地址（用于注册 Let's Encrypt 账号）: " user_email
 
-# 简单验证域名和电子邮件地址
+# 验证域名和电子邮件地址格式
 if ! [[ $domain_name =~ ^[a-zA-Z0-9.-]+$ ]]; then
     echo "域名格式错误。"
     exit 1
@@ -40,7 +48,7 @@ if ! [[ $user_email =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; the
     exit 1
 fi
 
-# 创建或检查目录存在
+# 创建或检查配置文件目录
 create_or_check_directory() {
     local directory="$1"
     if [ ! -d "$directory" ]; then
@@ -51,7 +59,6 @@ create_or_check_directory() {
     fi
 }
 
-# 创建或检查配置文件目录
 create_or_check_directory "/etc/nginx/sites-available"
 create_or_check_directory "/etc/nginx/sites-enabled"
 
@@ -71,8 +78,6 @@ install_nginx() {
     fi
     systemctl enable nginx
     systemctl start nginx
-
-    # 配置 Nginx 使用 SSL 证书
     configure_nginx_ssl
 }
 
@@ -87,8 +92,7 @@ install_mysql() {
     systemctl enable mysql
     systemctl start mysql
     mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mysqlrootpass'; FLUSH PRIVILEGES;"
-    
-    # 创建或更新 MySQL 配置文件
+
     cat > "$mysql_config_file" <<EOF
 [client]
 user=root
@@ -135,7 +139,6 @@ register_letsencrypt() {
 # 生成 SSL 证书
 generate_ssl_certificate() {
     echo "正在为 $domain_name 生成 SSL 证书..."
-    # 使用 Let's Encrypt 颁发证书
     ~/.acme.sh/acme.sh --issue --standalone -d $domain_name --server letsencrypt
     ~/.acme.sh/acme.sh --install-cert -d $domain_name \
         --key-file       $ssl_dir/$domain_name.key  \
@@ -217,4 +220,4 @@ echo "数据库密码：$db_password"
 echo "MySQL root 密码：$mysqlrootpass"
 echo "nginx配置文件 /etc/nginx/sites-available/wordpress"
 echo "数据库配置文件 /root/.my.cnf"
-echo "站点目录 /var/www/html"
+echo "站点目录 $install_dir"

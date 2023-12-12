@@ -57,25 +57,6 @@ if ! [[ $user_email =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; the
     exit 1
 fi
 
-# 创建或检查配置文件目录
-create_or_check_directory() {
-    local directory="$1"
-    if [ ! -d "$directory" ]; then
-        echo "目录不存在，正在创建：$directory"
-        mkdir -p "$directory"
-    else
-        echo "目录已存在：$directory"
-    fi
-}
-
-create_or_check_directory "/etc/nginx/sites-available"
-create_or_check_directory "/etc/nginx/sites-enabled"
-
-# 配置文件路径
-nginx_config_file="/etc/nginx/sites-available/wordpress"
-nginx_link_file="/etc/nginx/sites-enabled/wordpress"
-mysql_config_file="/root/.my.cnf"
-
 # 安装 Nginx
 install_nginx() {
     echo "正在安装 Nginx..."
@@ -87,6 +68,67 @@ install_nginx() {
     $PKG_MANAGER install -y nginx
     systemctl enable nginx
     systemctl start nginx
+}
+
+# 配置 Nginx
+configure_nginx() {
+    echo "正在配置 Nginx..."
+    cat > /etc/nginx/nginx.conf <<EOF
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    log_format  main  '\$remote_addr - \$remote_user [\$time_local] "\$request" '
+                      '\$status \$body_bytes_sent "\$http_referer" '
+                      '"\$http_user_agent" "\$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    keepalive_timeout   65;
+    types_hash_max_size 2048;
+
+    include             /etc/nginx/mime.types;
+    default_type        application/octet-stream;
+
+    include /etc/nginx/conf.d/*.conf;
+
+    server {
+        listen       80 default_server;
+        listen       [::]:80 default_server;
+        server_name  $domain_name;
+        root         $install_dir;
+
+        location / {
+            try_files \$uri \$uri/ /index.php?\$args;
+        }
+
+        location ~ \.php\$ {
+            fastcgi_pass unix:/var/run/php/$PHP_SERVICE.sock;
+            fastcgi_index index.php;
+            fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+            include fastcgi_params;
+        }
+
+        error_page 404 /404.html;
+            location = /40x.html {
+        }
+
+        error_page 500 502 503 504 /50x.html;
+            location = /50x.html {
+        }
+    }
+}
+EOF
+    systemctl restart nginx
 }
 
 # 安装 MySQL
@@ -158,49 +200,6 @@ generate_ssl_certificate() {
     systemctl start nginx
 }
 
-# 配置 Nginx 使用 SSL 证书
-configure_nginx_ssl() {
-    echo "配置 Nginx 使用 SSL 证书..."
-    if [ -f "$nginx_config_file" ]; then
-        rm "$nginx_config_file"
-    fi
-
-    cat > "$nginx_config_file" <<EOF
-server {
-    listen 80;
-    server_name $domain_name;
-    return 301 https://\$server_name\$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name $domain_name;
-
-    ssl_certificate $install_dir/$domain_name.cer;
-    ssl_certificate_key $install_dir/$domain_name.key;
-
-    root $install_dir;
-    index index.php index.html index.htm;
-
-    location / {
-        try_files \$uri \$uri/ /index.php?\$args;
-    }
-
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/$PHP_SERVICE.sock; # 根据 PHP 版本修改
-    }
-
-    location ~ /\.ht {
-        deny all;
-    }
-}
-EOF
-
-    ln -s "$nginx_config_file" "$nginx_link_file"
-    nginx -t && systemctl reload nginx
-}
-
 # 安装和配置 WordPress
 install_wordpress() {
     echo "正在安装 WordPress 中文版..."
@@ -216,6 +215,7 @@ install_wordpress() {
 
 # 主安装流程
 install_nginx
+configure_nginx
 install_mysql
 install_php
 install_wordpress
@@ -230,6 +230,6 @@ echo "数据库名称：$db_name"
 echo "数据库用户：$db_user"
 echo "数据库密码：$db_password"
 echo "MySQL root 密码：$mysqlrootpass"
-echo "nginx配置文件 /etc/nginx/sites-available/wordpress"
+echo "nginx配置文件 /etc/nginx/nginx.conf"
 echo "数据库配置文件 /root/.my.cnf"
 echo "站点目录 $install_dir"

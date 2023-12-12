@@ -187,29 +187,25 @@ register_letsencrypt() {
 # 生成 SSL 证书
 generate_ssl_certificate() {
     echo "正在为 $domain_name 生成 SSL 证书..."
+    local cert_dir="/root/.acme.sh/$domain_name"
+    local key_file="$cert_dir/$domain_name.key"
+    local cer_file="$cert_dir/$domain_name.cer"
 
-    # 检查证书是否已存在
-    if [ -f "$install_dir/$domain_name.key" ] && [ -f "$install_dir/$domain_name.cer" ]; then
+    if [ -f "$key_file" ] && [ -f "$cer_file" ]; then
         echo "证书已存在，跳过生成步骤"
     else
-        # 停止 nginx 以允许 acme.sh 使用端口 80
         systemctl stop nginx
-
-        # 生成证书
         ~/.acme.sh/acme.sh --issue --standalone -d $domain_name --server letsencrypt
         if [ $? -ne 0 ]; then
             echo "SSL 证书生成失败"
+            systemctl start nginx
             exit 1
         fi
-
-        # 安装证书
         ~/.acme.sh/acme.sh --install-cert -d $domain_name \
             --key-file       $install_dir/$domain_name.key  \
             --fullchain-file $install_dir/$domain_name.cer \
             --reloadcmd     "systemctl restart nginx"
     fi
-
-    # 启动 nginx
     systemctl start nginx
 }
 

@@ -1,12 +1,5 @@
 #!/bin/bash
 
-# 日志文件路径
-LOG_FILE="/var/log/wp_install.log"
-
-# 启动日志记录
-exec > >(tee -a ${LOG_FILE}) 2>&1
-echo "WordPress 安装日志 - $(date)"
-
 # 检查是否以 root 用户运行
 if [ "$(id -u)" != "0" ]; then
     echo "请以 root 用户运行此脚本"
@@ -70,7 +63,50 @@ install_nginx() {
 configure_nginx() {
     echo "正在配置 Nginx..."
     cat > /etc/nginx/nginx.conf <<EOF
-# Nginx 配置内容
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 768;
+}
+
+http {
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_prefer_server_ciphers on;
+
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+
+    server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+        server_name $domain_name;
+
+        root $install_dir;
+        index index.php index.html index.htm;
+
+        location / {
+            try_files \$uri \$uri/ /index.php?\$args;
+        }
+
+        location ~ \.php\$ {
+            include snippets/fastcgi-php.conf;
+            fastcgi_pass unix:/var/run/php/$PHP_SERVICE.sock;
+        }
+
+        location ~ /\.ht {
+            deny all;
+        }
+    }
+}
 EOF
     echo "检查 Nginx 配置文件..."
     nginx -t
@@ -82,7 +118,7 @@ EOF
     echo "重新启动 Nginx 服务..."
     systemctl restart nginx
     if [ $? -ne 0 ]; then
-        echo "Nginx 服务启动失败，请检查日志"
+        echo "Nginx 服务启动失败，请检查"
         exit 1
     fi
 }

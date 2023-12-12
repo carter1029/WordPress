@@ -13,20 +13,13 @@ if [ -f /etc/os-release ]; then
     DISTRO=$ID
 fi
 
-case $DISTRO in
-    ubuntu|debian)
-        PKG_MANAGER="apt-get"
-        PHP_SERVICE="php7.4-fpm"
-        ;;
-    centos|rhel|fedora)
-        PKG_MANAGER="yum"
-        PHP_SERVICE="php-fpm"
-        ;;
-    *)
-        echo "不支持的 Linux 发行版: $DISTRO"
-        exit 1
-        ;;
-esac
+if [ "$DISTRO" != "ubuntu" ] && [ "$DISTRO" != "debian" ]; then
+    echo "此脚本仅支持 Ubuntu 和 Debian 发行版。"
+    exit 1
+fi
+
+PKG_MANAGER="apt-get"
+PHP_SERVICE="php7.4-fpm"
 
 install_dir="/var/www/html"
 db_name="wp$(date +%s)"
@@ -60,10 +53,6 @@ fi
 # 安装 Nginx
 install_nginx() {
     echo "正在安装 Nginx..."
-    if [ "$DISTRO" = "centos" ] || [ "$DISTRO" = "rhel" ] || [ "$DISTRO" = "fedora" ]; then
-        # 安装 EPEL 仓库
-        $PKG_MANAGER install -y epel-release
-    fi
     $PKG_MANAGER update -y
     $PKG_MANAGER install -y nginx
     systemctl enable nginx
@@ -134,33 +123,23 @@ EOF
 # 安装 MySQL
 install_mysql() {
     echo "正在安装 MySQL..."
-    if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
-        $PKG_MANAGER install -y mysql-server mysql-client
-        systemctl enable mysql
-        systemctl start mysql
-    elif [ "$DISTRO" = "centos" ] || [ "$DISTRO" = "rhel" ] || [ "$DISTRO" = "fedora" ]; then
-        $PKG_MANAGER install -y mariadb-server mariadb
-        systemctl enable mariadb
-        systemctl start mariadb
-    fi
+    $PKG_MANAGER install -y mysql-server mysql-client
+    systemctl enable mysql
+    systemctl start mysql
     mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mysqlrootpass'; FLUSH PRIVILEGES;"
 
-    cat > "$mysql_config_file" <<EOF
+    cat > /root/.my.cnf <<EOF
 [client]
 user=root
 password=$mysqlrootpass
 EOF
-    chmod 640 "$mysql_config_file"
+    chmod 640 /root/.my.cnf
 }
 
 # 安装 PHP
 install_php() {
     echo "正在安装 PHP..."
-    if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
-        $PKG_MANAGER install -y php-fpm php-mysql
-    elif [ "$DISTRO" = "centos" ] || [ "$DISTRO" = "rhel" ] || [ "$DISTRO" = "fedora" ]; then
-        $PKG_MANAGER install -y php php-fpm php-mysql
-    fi
+    $PKG_MANAGER install -y php-fpm php-mysql
     systemctl enable $PHP_SERVICE
     systemctl start $PHP_SERVICE
 }

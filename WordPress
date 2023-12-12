@@ -224,7 +224,7 @@ configure_nginx
 install_wordpress
 
 # 输出安装信息
-echo "WordPress 安装完成。"
+echo "WordPress 安装完成，请保存以下重要信息。"
 echo "数据库名称：$db_name"
 echo "数据库用户：$db_user"
 echo "数据库密码：$db_password"

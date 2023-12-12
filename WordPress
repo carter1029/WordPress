@@ -79,6 +79,10 @@ mysql_config_file="/root/.my.cnf"
 # 安装 Nginx
 install_nginx() {
     echo "正在安装 Nginx..."
+    if [ "$DISTRO" = "centos" ] || [ "$DISTRO" = "rhel" ] || [ "$DISTRO" = "fedora" ]; then
+        # 安装 EPEL 仓库
+        $PKG_MANAGER install -y epel-release
+    fi
     $PKG_MANAGER update -y
     $PKG_MANAGER install -y nginx
     systemctl enable nginx

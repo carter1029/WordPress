@@ -1,0 +1,209 @@
+#!/bin/bash
+
+# 检查是否以 root 用户运行
+if [ "$(id -u)" != "0" ]; then
+    echo "请以 root 用户运行此脚本"
+    exit 1
+fi
+
+# 检测 Linux 发行版
+DISTRO=""
+if [ -f /etc/lsb-release ]; then
+    DISTRO="ubuntu"
+elif [ -f /etc/redhat-release ]; then
+    DISTRO="centos"
+elif [ -f /etc/debian_version ]; then
+    DISTRO="debian"
+else
+    echo "不支持的 Linux 发行版"
+    exit 1
+fi
+
+install_dir="/var/www/html"
+db_name="wp$(date +%s)"
+db_user="$db_name"
+db_password=$(openssl rand -base64 12)
+mysqlrootpass=$(openssl rand -base64 12)
+
+# 询问用户输入域名和电子邮件地址
+read -p "请输入您的域名: " domain_name
+read -p "请输入您的电子邮件地址（用于注册 Let's Encrypt 账号）: " user_email
+
+# 简单验证域名和电子邮件地址
+if ! [[ $domain_name =~ ^[a-zA-Z0-9.-]+$ ]]; then
+    echo "域名格式错误。"
+    exit 1
+fi
+
+if ! [[ $user_email =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; then
+    echo "电子邮件地址格式错误。"
+    exit 1
+fi
+
+# 检查安装目录是否存在
+if [ ! -d "$install_dir" ]; then
+    echo "安装目录不存在：$install_dir"
+    exit 1
+fi
+
+# 检查并创建 SSL 目录
+ssl_dir="/etc/nginx/ssl"
+if [ ! -d "$ssl_dir" ]; then
+    mkdir -p "$ssl_dir"
+fi
+
+# 安装 Nginx
+install_nginx() {
+    echo "正在安装 Nginx..."
+    if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
+        apt-get update -y
+        apt-get install -y nginx
+    elif [ "$DISTRO" = "centos" ]; then
+        yum -y install nginx
+    fi
+    systemctl enable nginx
+    systemctl start nginx
+}
+
+# 安装 MySQL
+install_mysql() {
+    echo "正在安装 MySQL..."
+    if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
+        apt-get install -y mysql-server mysql-client
+    elif [ "$DISTRO" = "centos" ]; then
+        yum -y install mariadb-server mariadb
+    fi
+    systemctl enable mysql
+    systemctl start mysql
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mysqlrootpass'; FLUSH PRIVILEGES;"
+    cat > /root/.my.cnf <<EOF
+[client]
+user=root
+password=$mysqlrootpass
+EOF
+    chmod 640 /root/.my.cnf
+}
+
+# 安装 PHP
+install_php() {
+    echo "正在安装 PHP..."
+    if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
+        apt-get install -y php-fpm php-mysql
+    elif [ "$DISTRO" = "centos" ]; then
+        yum -y install php-fpm php-mysql
+    fi
+    systemctl enable php-fpm
+    systemctl start php-fpm
+}
+
+# 安装 acme.sh
+install_acme_sh() {
+    echo "正在安装 acme.sh..."
+    curl https://get.acme.sh | sh
+    source ~/.bashrc
+}
+
+# 安装 socat
+install_socat() {
+    echo "正在安装 socat..."
+    if [ "$DISTRO" = "ubuntu" ] || [ "$DISTRO" = "debian" ]; then
+        apt-get install -y socat
+    elif [ "$DISTRO" = "centos" ]; then
+        yum -y install socat
+    fi
+}
+
+# 注册 Let's Encrypt 账号
+register_letsencrypt() {
+    echo "正在注册 Let's Encrypt 账号..."
+    ~/.acme.sh/acme.sh --register-account -m $user_email --server letsencrypt
+}
+
+# 生成 SSL 证书
+generate_ssl_certificate() {
+    echo "正在为 $domain_name 生成 SSL 证书..."
+    # 使用 Let's Encrypt 颁发证书
+    ~/.acme.sh/acme.sh --issue --standalone -d $domain_name --server letsencrypt
+    ~/.acme.sh/acme.sh --install-cert -d $domain_name \
+        --key-file       $ssl_dir/$domain_name.key  \
+        --fullchain-file $ssl_dir/$domain_name.cer \
+        --reloadcmd     "service nginx reload"
+}
+
+# 配置 Nginx 使用 SSL 证书
+configure_nginx_ssl() {
+    echo "配置 Nginx 使用 SSL 证书..."
+    config_file="/etc/nginx/sites-available/wordpress"
+    link_file="/etc/nginx/sites-enabled/wordpress"
+
+    if [ -f "$link_file" ]; then
+        rm "$link_file"
+    fi
+
+    cat > $config_file <<EOF
+server {
+    listen 80;
+    server_name $domain_name;
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name $domain_name;
+
+    ssl_certificate $ssl_dir/$domain_name.cer;
+    ssl_certificate_key $ssl_dir/$domain_name.key;
+
+    root $install_dir;
+    index index.php index.html index.htm;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php7.4-fpm.sock; # 根据 PHP 版本修改
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOF
+
+    ln -s $config_file $link_file
+    nginx -t && systemctl reload nginx
+}
+
+# 安装和配置 WordPress
+install_wordpress() {
+    echo "正在安装 WordPress 中文版..."
+    wget -O /tmp/latest-zh_CN.tar.gz https://cn.wordpress.org/latest-zh_CN.tar.gz
+    tar -C $install_dir -zxf /tmp/latest-zh_CN.tar.gz --strip-components=1
+    cp $install_dir/wp-config-sample.php $install_dir/wp-config.php
+    sed -i "s/database_name_here/$db_name/g" $install_dir/wp-config.php
+    sed -i "s/username_here/$db_user/g" $install_dir/wp-config.php
+    sed -i "s/password_here/$db_password/g" $install_dir/wp-config.php
+    wget -O - https://api.wordpress.org/secret-key/1.1/salt/ >> $install_dir/wp-config.php
+    mysql -u root -e "CREATE DATABASE $db_name; CREATE USER '$db_user'@'localhost' IDENTIFIED BY '$db_password'; GRANT ALL PRIVILEGES ON $db_name.* TO '$db_user'@'localhost'; FLUSH PRIVILEGES;"
+}
+
+# 主安装流程
+install_nginx
+install_mysql
+install_php
+install_wordpress
+install_acme_sh
+install_socat
+register_letsencrypt
+generate_ssl_certificate
+configure_nginx_ssl
+
+# 输出安装信息
+echo "WordPress 安装完成。"
+echo "数据库名称：$db_name"
+echo "数据库用户：$db_user"
+echo "数据库密码：$db_password"
+echo "MySQL root 密码：$mysqlrootpass"
+echo "Nginx 配置文件路径 /etc/nginx/sites-available/wordpress"

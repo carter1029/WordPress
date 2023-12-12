@@ -71,8 +71,20 @@ install_mysql() {
     $PKG_MANAGER install -y mysql-server mysql-client
     systemctl enable mysql
     systemctl start mysql
-    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$mysqlrootpass'; FLUSH PRIVILEGES;"
 
+    # 配置 MySQL root 用户密码
+    mysql --user=root <<-EOF
+ALTER USER 'root'@'localhost' IDENTIFIED BY '$mysqlrootpass';
+FLUSH PRIVILEGES;
+EOF
+
+    # 检查 MySQL 是否成功启动
+    if ! systemctl is-active --quiet mysql; then
+        echo "MySQL 服务启动失败。"
+        exit 1
+    fi
+
+    # 保存 MySQL root 密码
     cat > /root/.my.cnf <<EOF
 [client]
 user=root
@@ -112,11 +124,15 @@ register_letsencrypt() {
 generate_ssl_certificate() {
     echo "正在为 $domain_name 生成 SSL 证书..."
     systemctl stop nginx
+
+    # 使用 acme.sh 生成证书
     ~/.acme.sh/acme.sh --issue --standalone -d $domain_name --server letsencrypt
+
     if [ $? -ne 0 ]; then
         echo "SSL 证书生成失败"
         exit 1
     fi
+
     ~/.acme.sh/acme.sh --install-cert -d $domain_name \
         --key-file       /etc/ssl/$domain_name.key  \
         --fullchain-file /etc/ssl/$domain_name.cer \
@@ -186,7 +202,13 @@ install_wordpress() {
     sed -i "s/username_here/$db_user/g" "$install_dir/wp-config.php"
     sed -i "s/password_here/$db_password/g" "$install_dir/wp-config.php"
     wget -O - https://api.wordpress.org/secret-key/1.1/salt/ >> "$install_dir/wp-config.php"
-    mysql -u root -e "CREATE DATABASE $db_name; CREATE USER '$db_user'@'localhost' IDENTIFIED BY '$db_password'; GRANT ALL PRIVILEGES ON $db_name.* TO '$db_user'@'localhost'; FLUSH PRIVILEGES;"
+
+    # 创建数据库和用户
+    mysql --user=root --password=$mysqlrootpass <<-EOF
+CREATE DATABASE $db_name CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+GRANT ALL ON $db_name.* TO '$db_user'@'localhost' IDENTIFIED BY '$db_password';
+FLUSH PRIVILEGES;
+EOF
 }
 
 # 主安装流程

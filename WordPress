@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# 日志文件路径
+LOG_FILE="/var/log/wp_install.log"
+
+# 启动日志记录
+exec > >(tee -a ${LOG_FILE}) 2>&1
+echo "WordPress 安装日志 - $(date)"
+
 # 检查是否以 root 用户运行
 if [ "$(id -u)" != "0" ]; then
     echo "请以 root 用户运行此脚本"
@@ -63,61 +70,21 @@ install_nginx() {
 configure_nginx() {
     echo "正在配置 Nginx..."
     cat > /etc/nginx/nginx.conf <<EOF
-user nginx;
-worker_processes auto;
-error_log /var/log/nginx/error.log;
-pid /run/nginx.pid;
-
-events {
-    worker_connections 1024;
-}
-
-http {
-    log_format  main  '\$remote_addr - \$remote_user [\$time_local] "\$request" '
-                      '\$status \$body_bytes_sent "\$http_referer" '
-                      '"\$http_user_agent" "\$http_x_forwarded_for"';
-
-    access_log  /var/log/nginx/access.log  main;
-
-    sendfile            on;
-    tcp_nopush          on;
-    tcp_nodelay         on;
-    keepalive_timeout   65;
-    types_hash_max_size 2048;
-
-    include             /etc/nginx/mime.types;
-    default_type        application/octet-stream;
-
-    include /etc/nginx/conf.d/*.conf;
-
-    server {
-        listen       80 default_server;
-        listen       [::]:80 default_server;
-        server_name  $domain_name;
-        root         $install_dir;
-
-        location / {
-            try_files \$uri \$uri/ /index.php?\$args;
-        }
-
-        location ~ \.php\$ {
-            fastcgi_pass unix:/var/run/php/$PHP_SERVICE.sock;
-            fastcgi_index index.php;
-            fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-            include fastcgi_params;
-        }
-
-        error_page 404 /404.html;
-            location = /40x.html {
-        }
-
-        error_page 500 502 503 504 /50x.html;
-            location = /50x.html {
-        }
-    }
-}
+# Nginx 配置内容
 EOF
+    echo "检查 Nginx 配置文件..."
+    nginx -t
+    if [ $? -ne 0 ]; then
+        echo "Nginx 配置文件错误，请检查 /etc/nginx/nginx.conf"
+        exit 1
+    fi
+
+    echo "重新启动 Nginx 服务..."
     systemctl restart nginx
+    if [ $? -ne 0 ]; then
+        echo "Nginx 服务启动失败，请检查日志"
+        exit 1
+    fi
 }
 
 # 安装 MySQL

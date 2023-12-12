@@ -57,6 +57,12 @@ install_nginx() {
     $PKG_MANAGER install -y nginx
     systemctl enable nginx
     systemctl start nginx
+
+    # 删除默认的 Nginx 站点配置
+    if [ -f /etc/nginx/sites-enabled/default ]; then
+        echo "删除默认 Nginx 站点配置..."
+        rm -f /etc/nginx/sites-enabled/default
+    fi
 }
 
 # 配置 Nginx

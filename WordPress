@@ -114,9 +114,9 @@ install_socat() {
     $PKG_MANAGER install -y socat
 }
 
-# 注册 Let's Encrypt 账号
+# 注册 Let's Encrypt 用于申请证书
 register_letsencrypt() {
-    echo "正在注册 Let's Encrypt 账号..."
+    echo "正在注册CA机构..."
     ~/.acme.sh/acme.sh --register-account -m $user_email --server letsencrypt
 }
 
